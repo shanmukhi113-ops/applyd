@@ -106,3 +106,59 @@ payload — it's secrecy of the signing key. That's what makes a JWT
 trustworthy despite being fully readable by anyone who intercepts it.
 
 ---
+
+## Auth routes: signup & login
+
+**Routes vs. controllers, why split:**
+A route answers "which URL + method triggers what." A controller holds 
+the actual logic. Splitting them avoids one giant file as the app grows 
+past a handful of endpoints — same reasoning as splitting the User 
+model into its own file.
+
+**`express.Router()`:**
+A self-contained, mini version of `app` — has `.get`/`.post` etc., but 
+can't `.listen()` on its own. `app.use('/api/auth', authRoutes)` mounts 
+it at a prefix; the router's own paths (e.g. `/signup`) get appended to 
+that prefix to form the real route (`/api/auth/signup`). Keeps the 
+prefix defined in one place instead of repeated in every route.
+
+**Why `app.use(express.json())` must come before routes:**
+Express processes middleware and routes in the order they're 
+registered. If JSON-body parsing isn't set up before a route tries to 
+read `req.body`, it'll be `undefined`.
+
+**bcrypt.compare — not decryption:**
+Hashes the newly submitted password the same way the original was 
+hashed, then compares the two hashes. There is no reverse operation — 
+bcrypt hashes can't be "decrypted" back into the original password.
+
+**Why identical error messages on login failure:**
+"Invalid credentials" is used for both "no such user" and "wrong 
+password" deliberately — distinguishing them would let an attacker 
+enumerate which emails have real accounts just by watching which error 
+comes back.
+
+**async/await, concretely:**
+Functions like `User.findOne`, `User.create`, `bcrypt.hash`, 
+`bcrypt.compare` are asynchronous — they return a Promise immediately, 
+not the final result. `await` pauses execution of the current function 
+until that Promise resolves to a real value. Skipping `await` means 
+working with the Promise object itself, which is always truthy — so 
+`if` checks silently take the wrong branch instead of throwing an 
+obvious error. This was the root cause of multiple bugs today.
+
+**Node doesn't watch files:**
+Editing code while a server is already running has no effect until the 
+process is stopped and restarted — `node index.js` only reads the file 
+once, at startup. Nodemon exists specifically to solve this by watching 
+for changes and auto-restarting.
+
+**Reading error messages:**
+- `ReferenceError: X is not defined` → typo or undeclared variable; 
+  stack trace gives exact file + line.
+- `Cannot find module '...'` → `require()` path doesn't match a real 
+  file, often a typo — matching is exact and case-sensitive.
+- `bad auth: authentication failed` (MongoDB) → credentials problem, 
+  not necessarily a whitelist/network issue even if the suggested fix 
+  mentions IP whitelisting — don't trust a suggested cause blindly, 
+  verify what's actually failing.
